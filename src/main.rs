@@ -4,6 +4,7 @@ use eframe::egui;
 struct App {
     expression: String,
     result: String,
+    error: bool,
 }
 
 impl eframe::App for App {
@@ -14,6 +15,7 @@ impl eframe::App for App {
         ui.text_edit_singleline(&mut self.expression);
 
         if ui.button("CALCULATE").clicked() {
+            self.error = false;
             let mut digits = vec![String::new()];
             let mut operations = Vec::new();
             let mut index = 0;
@@ -26,18 +28,53 @@ impl eframe::App for App {
                     digits[index].push(char);
                 }
             }
-            let mut output = String::new();
+
+            let mut output = match digits[0].parse::<f32>() {
+                Ok(number) => number,
+                Err(_) => 0.0,
+            };
             for (i, op) in operations.iter().enumerate() {
-                output.push_str(&digits[i]);
-                output.push(' ');
-                output.push(*op);
-                output.push(' ');
+                let a = output;
+                let b = match digits[i + 1].parse() {
+                    Ok(number) => number,
+                    Err(_) => {
+                        self.error = true;
+                        0.0
+                    }
+                };
+
+                match op {
+                    '+' => output = a + b,
+                    '-' => output = a - b,
+                    '*' => output = a * b,
+                    '/' => output = a / b,
+                    '^' => {
+                        output = {
+                            let mut temp = a;
+                            for _ in 0..b as usize - 1 {
+                                temp *= a;
+                            }
+                            temp
+                        }
+                    }
+                    _ => {
+                        self.error = true;
+                        continue;
+                    }
+                }
             }
-            output.push_str(&digits[operations.len()]);
-            self.result = output.clone();
+            self.result = output.to_string();
         }
 
-        ui.label(&self.result);
+        if self.error {
+            ui.label(
+                egui::RichText::new("Error!")
+                    .color(egui::Color32::RED)
+                    .size(30.0),
+            );
+        } else {
+            ui.label(&self.result);
+        }
     }
 }
 
@@ -45,6 +82,10 @@ fn main() -> eframe::Result {
     let option = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder {
             title: Some("Calculator".to_string()),
+            transparent: Some(true),
+            resizable: Some(true),
+            min_inner_size: Some(egui::vec2(150.0, 202.0)),
+            inner_size: Some(egui::vec2(200.0, 270.0)),
             ..eframe::egui::ViewportBuilder::default()
         },
         ..Default::default()

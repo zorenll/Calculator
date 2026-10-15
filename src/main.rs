@@ -16,54 +16,129 @@ impl eframe::App for App {
 
         if ui.button("CALCULATE").clicked() {
             self.error = false;
+
             let mut digits = vec![String::new()];
             let mut operations = Vec::new();
             let mut index = 0;
-            for char in self.expression.chars() {
-                if !char.is_digit(10) {
-                    digits.push(String::new());
-                    index += 1;
-                    operations.push(char);
+
+            for ch in self.expression.chars() {
+                if ch.is_whitespace() {
+                    continue;
+                }
+
+                if ch.is_ascii_digit() || ch == '.' {
+                    digits[index].push(ch);
                 } else {
-                    digits[index].push(char);
+                    if !matches!(ch, '+' | '-' | '*' | '/' | '^') {
+                        self.error = true;
+                        return;
+                    }
+
+                    digits.push(String::new());
+                    operations.push(ch);
+                    index += 1;
                 }
             }
 
-            let mut output = match digits[0].parse::<f32>() {
-                Ok(number) => number,
-                Err(_) => 0.0,
-            };
-            for (i, op) in operations.iter().enumerate() {
-                let a = output;
-                let b = match digits[i + 1].parse() {
-                    Ok(number) => number,
+            let mut nums = Vec::new();
+
+            for digit in digits {
+                match digit.parse::<f32>() {
+                    Ok(number) => nums.push(Some(number)),
                     Err(_) => {
                         self.error = true;
-                        0.0
-                    }
-                };
-
-                match op {
-                    '+' => output = a + b,
-                    '-' => output = a - b,
-                    '*' => output = a * b,
-                    '/' => output = a / b,
-                    '^' => {
-                        output = {
-                            let mut temp = a;
-                            for _ in 0..b as usize - 1 {
-                                temp *= a;
-                            }
-                            temp
-                        }
-                    }
-                    _ => {
-                        self.error = true;
-                        continue;
+                        return;
                     }
                 }
             }
-            self.result = output.to_string();
+
+            // Exponents (right to left)
+            for (i, op) in operations.iter().enumerate().rev() {
+                if *op != '^' {
+                    continue;
+                }
+
+                let ai = (0..=i).rev().find(|&j| nums[j].is_some());
+                let bi = (i + 1..nums.len()).find(|&j| nums[j].is_some());
+
+                let (Some(ai), Some(bi)) = (ai, bi) else {
+                    self.error = true;
+                    return;
+                };
+
+                let a = nums[ai].unwrap();
+                let b = nums[bi].unwrap();
+
+                nums[ai] = Some(a.powf(b));
+                nums[bi] = None;
+            }
+
+            // Multiplication and division
+            for (i, op) in operations.iter().enumerate() {
+                if *op != '*' && *op != '/' {
+                    continue;
+                }
+
+                let ai = (0..=i).rev().find(|&j| nums[j].is_some());
+                let bi = (i + 1..nums.len()).find(|&j| nums[j].is_some());
+
+                let (Some(ai), Some(bi)) = (ai, bi) else {
+                    self.error = true;
+                    return;
+                };
+
+                let a = nums[ai].unwrap();
+                let b = nums[bi].unwrap();
+
+                if *op == '/' && b == 0.0 {
+                    self.error = true;
+                    return;
+                }
+
+                if *op == '*' {
+                    nums[ai] = Some(a * b);
+                } else {
+                    nums[ai] = Some(a / b);
+                }
+
+                nums[bi] = None;
+            }
+
+            // Addition and subtraction
+            for (i, op) in operations.iter().enumerate() {
+                if *op != '+' && *op != '-' {
+                    continue;
+                }
+
+                let ai = (0..=i).rev().find(|&j| nums[j].is_some());
+                let bi = (i + 1..nums.len()).find(|&j| nums[j].is_some());
+
+                let (Some(ai), Some(bi)) = (ai, bi) else {
+                    self.error = true;
+                    return;
+                };
+
+                let a = nums[ai].unwrap();
+                let b = nums[bi].unwrap();
+
+                if *op == '+' {
+                    nums[ai] = Some(a + b);
+                } else {
+                    nums[ai] = Some(a - b);
+                }
+
+                nums[bi] = None;
+            }
+
+            if let Some(result) = nums.into_iter().flatten().next() {
+                if result.is_finite() {
+                    self.result = result.to_string();
+                } else {
+                    self.error = true;
+                }
+            } else {
+                self.error = true;
+            }
         }
 
         if self.error {
